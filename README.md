@@ -2,6 +2,10 @@
 
 > Record my learning process of Pytorch Lightning.
 
-## refer
+## Table of Contents
 
-- [LIGHTNING IN 15 MINUTES](https://lightning.ai/docs/pytorch/stable/starter/introduction.html)
+| No. | Content | Done |
+| --- | ------- | ---- |
+| 1 | [LIGHTNING IN 15 MINUTES](./00-LIGHTNING_IN_15_MINUTES/README.md) | ✅ |
+| 2 | [TRAIN A MODEL (BASIC)](./01-TRAIN_A_MODEL_BASIC/README.md) | ✅ |
+
