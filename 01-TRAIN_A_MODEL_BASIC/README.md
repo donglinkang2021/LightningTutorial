@@ -135,3 +135,7 @@ root      391081   13543  0 11:20 pts/20   00:00:00 grep --color=auto train.py
 # then you can use the following command to stop the code
 kill -9 390841
 ```
+
+## Refer
+
+- [TRAIN A MODEL (BASIC)](https://lightning.ai/docs/pytorch/stable/model/train_model_basic.html)
