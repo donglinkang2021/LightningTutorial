@@ -91,10 +91,11 @@ valid_loader = DataLoader(valid_set, batch_size)
 test_loader = DataLoader(test_set, batch_size)
 
 # model
-model = LitAutoEncoder(Encoder(), Decoder())
+prev_ckpt = "lightning_logs/version_4/checkpoints/epoch=2-step=2250.ckpt"
+model = LitAutoEncoder.load_from_checkpoint(prev_ckpt, encoder=Encoder(), decoder=Decoder())
 
 # train model
-trainer = L.Trainer(max_epochs=3, default_root_dir=os.getcwd())
+trainer = L.Trainer(max_epochs=3)
 trainer.fit(model, train_dataloaders=train_loader, val_dataloaders=valid_loader)
 # test the model
 trainer.test(model, dataloaders=test_loader)
