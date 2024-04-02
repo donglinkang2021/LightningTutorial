@@ -54,7 +54,7 @@ class LitAutoEncoder(L.LightningModule):
         return optimizer
 
 dataset = MNIST(
-    os.getcwd(), 
+    "data", 
     download=True, 
     transform=transforms.ToTensor()
 )

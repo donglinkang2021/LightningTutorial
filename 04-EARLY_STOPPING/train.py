@@ -75,8 +75,8 @@ class LitAutoEncoder(L.LightningModule):
 
 # Load data sets
 transform = transforms.ToTensor()
-train_set = MNIST(root="./", download=False, train=True, transform=transform)
-test_set = MNIST(root="./", download=False, train=False, transform=transform)
+train_set = MNIST(root="data", download=False, train=True, transform=transform)
+test_set = MNIST(root="data", download=False, train=False, transform=transform)
 
 # use 20% of training data for validation
 train_set_size = int(len(train_set) * 0.8)

@@ -1,4 +1,4 @@
-MNIST
+data
 lightning_logs
 .hypothesis
 *.log
