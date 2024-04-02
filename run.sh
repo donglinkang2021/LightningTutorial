@@ -1,4 +1,4 @@
-code_dir="03-SAVING_AND_LOADING_CHECKPOINTS_BASIC"
+code_dir="04-EARLY_STOPPING"
 
 nohup python $code_dir/train.py > $code_dir/output.log &
 
