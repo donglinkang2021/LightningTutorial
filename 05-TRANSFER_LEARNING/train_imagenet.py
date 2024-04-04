@@ -92,31 +92,63 @@ class ImagenetTransferLearning(L.LightningModule):
         optimizer = torch.optim.AdamW(self.parameters(), lr=3e-4)
         return optimizer
     
-# init data
-transform = transforms.Compose([
-    transforms.Resize((224, 224)),
-    transforms.ToTensor()
-])
-
-train_set = CIFAR10(root="data", train=True, transform=transform, download=False)
-test_set = CIFAR10(root="data", train=False, transform=transform, download=False)
-
-# use 20% of training data for validation
-train_set_size = int(len(train_set) * 0.8)
-valid_set_size = len(train_set) - train_set_size
-
-# split the train set into two
-seed = torch.Generator().manual_seed(1337)
-train_set, valid_set = data.random_split(train_set, [train_set_size, valid_set_size], generator=seed)
+class CIFAR10DataModule(L.LightningDataModule):
+    def __init__(self, data_dir, batch_size, num_workers):
+        super().__init__()
+        self.data_dir = data_dir
+        self.batch_size = batch_size
+        self.num_workers = num_workers
+        self.transform = transforms.Compose([
+            transforms.Resize((224, 224)),
+            transforms.ToTensor()
+        ])
+    
+    def prepare_data(self):
+        # single gpu
+        CIFAR10(root=self.data_dir, train=True, download=True)
+        CIFAR10(root=self.data_dir, train=False, download=True)
+        
+    
+    def setup(self, stage=None):
+        # multi-gpu
+        entire_dataset = CIFAR10(root=self.data_dir, train=True, transform=self.transform, download=False)
+        self.test_set = CIFAR10(root=self.data_dir, train=False, transform=self.transform, download=False)
+        train_set_size = int(len(entire_dataset) * 0.8)
+        valid_set_size = len(entire_dataset) - train_set_size
+        seed = torch.Generator().manual_seed(1337)
+        self.train_set, self.valid_set = data.random_split(entire_dataset, [train_set_size, valid_set_size], generator=seed)
+    
+    def train_dataloader(self):
+        return DataLoader(
+            self.train_set, 
+            self.batch_size, 
+            num_workers=self.num_workers, 
+            shuffle=True
+        )
+    
+    def val_dataloader(self):
+        return DataLoader(
+            self.valid_set, 
+            self.batch_size, 
+            num_workers=self.num_workers, 
+            shuffle=False
+        )
+    
+    def test_dataloader(self):
+        return DataLoader(
+            self.test_set, 
+            self.batch_size, 
+            num_workers=self.num_workers, 
+            shuffle=False
+        )
+    
 
 batch_size = 128
 num_workers = 4
-train_loader = DataLoader(train_set, batch_size, num_workers=num_workers)
-valid_loader = DataLoader(valid_set, batch_size, num_workers=num_workers)
-test_loader = DataLoader(test_set, batch_size, num_workers=num_workers)
+dm = CIFAR10DataModule(data_dir="data", batch_size=batch_size, num_workers=num_workers)
 
 # model
-prev_ckpt = "lightning_logs/version_11/checkpoints/epoch=19-step=3140.ckpt"
+prev_ckpt = "lightning_logs/version_12/checkpoints/epoch=19-step=3140.ckpt"
 model = ImagenetTransferLearning.load_from_checkpoint(prev_ckpt)
 
 # training
@@ -128,9 +160,9 @@ trainer = L.Trainer(
     num_nodes=1,
     max_epochs=20
 )
-trainer.fit(model, train_dataloaders=train_loader, val_dataloaders=valid_loader)
-# test the model
-trainer.test(model, dataloaders=test_loader)
+trainer.fit(model, dm)
+trainer.validate(model, dm)
+trainer.test(model, dm)
 
 """
 ┏━━━━━━━━━━━━━━━━━━━━━━━━━━━┳━━━━━━━━━━━━━━━━━━━━━━━━━━━┓
