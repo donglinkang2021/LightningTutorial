@@ -4,4 +4,4 @@
 # python read_log.py --log_file $code_dir/output.log
 
 # download hugingface model
-nohup ./download_hf.sh > download_hf.log &
+# nohup ./download_hf.sh > download_hf.log &

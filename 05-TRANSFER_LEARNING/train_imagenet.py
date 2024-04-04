@@ -8,6 +8,9 @@ from torchvision import transforms
 from torchvision.datasets import CIFAR10
 from torch.utils.data import DataLoader
 import lightning as L
+from lightning.pytorch.strategies import DDPStrategy
+
+torch.set_float32_matmul_precision('high')
 
 class ImagenetTransferLearning(L.LightningModule):
     def __init__(self):
@@ -18,44 +21,53 @@ class ImagenetTransferLearning(L.LightningModule):
         num_filters = backbone.fc.in_features
         layers = list(backbone.children())[:-1]
         self.feature_extractor = nn.Sequential(*layers)
-        self.feature_extractor.eval()
+        for param in self.feature_extractor.parameters():
+            param.requires_grad = False
+        self.loss_fn = nn.CrossEntropyLoss()
 
         # use the pretrained model to classify cifar-10 (10 image classes)
         num_target_classes = 10
         self.classifier = nn.Linear(num_filters, num_target_classes)
 
     def forward(self, x):
-        with torch.no_grad():
-            representations = self.feature_extractor(x).flatten(1)
+        representations = self.feature_extractor(x).flatten(1)
         x = self.classifier(representations)
         return x
     
     def training_step(self, batch, batch_idx):
-        x, y = batch
-        logits = self(x)
-        loss = F.cross_entropy(logits, y)
+        loss, logits, y = self._common_step(batch, batch_idx)
         self.log("train_loss", loss)
         return loss
     
     def validation_step(self, batch, batch_idx):
-        x, y = batch
-        logits = self(x)
-        loss = F.cross_entropy(logits, y)
-        self.log("val_loss", loss)
+        loss, logits, y = self._common_step(batch, batch_idx)
         
         preds = torch.argmax(logits, dim=1)
         acc = (preds == y).float().mean()
-        self.log("val_acc", acc)
+
+        self.log_dict({"val_loss": loss, "val_acc": acc}, sync_dist=True)
+        return loss
 
     def test_step(self, batch, batch_idx):
-        x, y = batch
-        logits = self(x)
-        loss = F.cross_entropy(logits, y)
-        self.log("test_loss", loss)
+        loss, logits, y = self._common_step(batch, batch_idx)
         
         preds = torch.argmax(logits, dim=1)
         acc = (preds == y).float().mean()
-        self.log("test_acc", acc)
+
+        self.log_dict({"test_loss": loss, "test_acc": acc}, sync_dist=True)
+        return loss
+
+    def _common_step(self, batch, batch_idx):
+        x, y = batch
+        logits = self(x)
+        loss = self.loss_fn(logits, y)
+        return loss, logits, y
+    
+    def predict_step(self, batch, batch_idx):
+        x, y = batch
+        logits = self(x)
+        preds = torch.argmax(logits, dim=1)
+        return preds
     
     def configure_optimizers(self):
         optimizer = torch.optim.AdamW(self.parameters(), lr=3e-4)
@@ -67,8 +79,8 @@ transform = transforms.Compose([
     transforms.ToTensor()
 ])
 
-train_set = CIFAR10(root="data", train=True, transform=transform, download=True)
-test_set = CIFAR10(root="data", train=False, transform=transform, download=True)
+train_set = CIFAR10(root="data", train=True, transform=transform, download=False)
+test_set = CIFAR10(root="data", train=False, transform=transform, download=False)
 
 # use 20% of training data for validation
 train_set_size = int(len(train_set) * 0.8)
@@ -78,17 +90,25 @@ valid_set_size = len(train_set) - train_set_size
 seed = torch.Generator().manual_seed(1337)
 train_set, valid_set = data.random_split(train_set, [train_set_size, valid_set_size], generator=seed)
 
-batch_size=64
-train_loader = DataLoader(train_set, batch_size)
-valid_loader = DataLoader(valid_set, batch_size)
-test_loader = DataLoader(test_set, batch_size)
+batch_size = 128
+num_workers = 4
+train_loader = DataLoader(train_set, batch_size, num_workers=num_workers)
+valid_loader = DataLoader(valid_set, batch_size, num_workers=num_workers)
+test_loader = DataLoader(test_set, batch_size, num_workers=num_workers)
 
 # model
-prev_ckpt = "lightning_logs/version_7/checkpoints/epoch=9-step=6250.ckpt"
+prev_ckpt = "lightning_logs/version_10/checkpoints/epoch=19-step=3140.ckpt"
 model = ImagenetTransferLearning.load_from_checkpoint(prev_ckpt)
 
 # training
-trainer = L.Trainer(max_epochs=10)
+trainer = L.Trainer(
+    accelerator="gpu",
+    # strategy=DDPStrategy(find_unused_parameters=True), # if you use with torch.no_grad() in the forward method
+    devices=[0, 1],
+    precision=16,
+    num_nodes=1,
+    max_epochs=20
+)
 trainer.fit(model, train_dataloaders=train_loader, val_dataloaders=valid_loader)
 # test the model
 trainer.test(model, dataloaders=test_loader)
