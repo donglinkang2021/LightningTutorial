@@ -8,9 +8,25 @@ from torchvision import transforms
 from torchvision.datasets import CIFAR10
 from torch.utils.data import DataLoader
 import lightning as L
-from lightning.pytorch.strategies import DDPStrategy
+# from lightning.pytorch.strategies import DDPStrategy
+import torchmetrics
+from torchmetrics import Metric
 
 torch.set_float32_matmul_precision('high')
+
+class Accuracy(Metric):
+    def __init__(self):
+        super().__init__()
+        self.add_state("correct", default=torch.tensor(0), dist_reduce_fx="sum")
+        self.add_state("total", default=torch.tensor(0), dist_reduce_fx="sum")
+
+    def update(self, preds, target):
+        preds = torch.argmax(preds, dim=1)
+        self.correct += torch.sum(preds == target)
+        self.total += target.numel()
+
+    def compute(self):
+        return self.correct / self.total
 
 class ImagenetTransferLearning(L.LightningModule):
     def __init__(self):
@@ -23,11 +39,15 @@ class ImagenetTransferLearning(L.LightningModule):
         self.feature_extractor = nn.Sequential(*layers)
         for param in self.feature_extractor.parameters():
             param.requires_grad = False
-        self.loss_fn = nn.CrossEntropyLoss()
 
         # use the pretrained model to classify cifar-10 (10 image classes)
         num_target_classes = 10
         self.classifier = nn.Linear(num_filters, num_target_classes)
+
+        self.loss_fn = nn.CrossEntropyLoss()
+        # self.accuracy = torchmetrics.Accuracy(task = "multiclass", num_classes = num_target_classes)
+        self.accuracy = Accuracy()
+        self.f1_score = torchmetrics.F1Score(task = "multiclass", num_classes = num_target_classes)
 
     def forward(self, x):
         representations = self.feature_extractor(x).flatten(1)
@@ -36,25 +56,24 @@ class ImagenetTransferLearning(L.LightningModule):
     
     def training_step(self, batch, batch_idx):
         loss, logits, y = self._common_step(batch, batch_idx)
-        self.log("train_loss", loss)
+        accuracy = self.accuracy(logits, y)
+        f1_score = self.f1_score(logits, y)
+        self.log_dict({"train_loss": loss, "train_acc": accuracy, "train_f1": f1_score}, sync_dist=True,
+                      on_step=False, on_epoch=True, prog_bar=True)
         return loss
     
     def validation_step(self, batch, batch_idx):
         loss, logits, y = self._common_step(batch, batch_idx)
-        
-        preds = torch.argmax(logits, dim=1)
-        acc = (preds == y).float().mean()
-
-        self.log_dict({"val_loss": loss, "val_acc": acc}, sync_dist=True)
+        accuracy = self.accuracy(logits, y)
+        f1_score = self.f1_score(logits, y)
+        self.log_dict({"val_loss": loss, "val_acc": accuracy, "val_f1": f1_score}, sync_dist=True)
         return loss
 
     def test_step(self, batch, batch_idx):
         loss, logits, y = self._common_step(batch, batch_idx)
-        
-        preds = torch.argmax(logits, dim=1)
-        acc = (preds == y).float().mean()
-
-        self.log_dict({"test_loss": loss, "test_acc": acc}, sync_dist=True)
+        accuracy = self.accuracy(logits, y)
+        f1_score = self.f1_score(logits, y)
+        self.log_dict({"test_loss": loss, "test_acc": accuracy, "test_f1": f1_score}, sync_dist=True)
         return loss
 
     def _common_step(self, batch, batch_idx):
@@ -97,7 +116,7 @@ valid_loader = DataLoader(valid_set, batch_size, num_workers=num_workers)
 test_loader = DataLoader(test_set, batch_size, num_workers=num_workers)
 
 # model
-prev_ckpt = "lightning_logs/version_10/checkpoints/epoch=19-step=3140.ckpt"
+prev_ckpt = "lightning_logs/version_11/checkpoints/epoch=19-step=3140.ckpt"
 model = ImagenetTransferLearning.load_from_checkpoint(prev_ckpt)
 
 # training
