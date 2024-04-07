@@ -148,15 +148,16 @@ num_workers = 4
 dm = CIFAR10DataModule(data_dir="data", batch_size=batch_size, num_workers=num_workers)
 
 # model
-prev_ckpt = "lightning_logs/version_12/checkpoints/epoch=19-step=3140.ckpt"
+prev_ckpt = "lightning_logs/version_16/checkpoints/epoch=19-step=3140.ckpt"
 model = ImagenetTransferLearning.load_from_checkpoint(prev_ckpt)
+# model = ImagenetTransferLearning()
 
 # training
 trainer = L.Trainer(
     accelerator="gpu",
     # strategy=DDPStrategy(find_unused_parameters=True), # if you use with torch.no_grad() in the forward method
     devices=[0, 1],
-    precision=16,
+    precision=32,
     num_nodes=1,
     max_epochs=20
 )
@@ -164,18 +165,12 @@ trainer.fit(model, dm)
 trainer.validate(model, dm)
 trainer.test(model, dm)
 
-"""
+""" output
 ┏━━━━━━━━━━━━━━━━━━━━━━━━━━━┳━━━━━━━━━━━━━━━━━━━━━━━━━━━┓
 ┃        Test metric        ┃       DataLoader 0        ┃
 ┡━━━━━━━━━━━━━━━━━━━━━━━━━━━╇━━━━━━━━━━━━━━━━━━━━━━━━━━━┩
-│         test_acc          │    0.8701000213623047     │
-│         test_loss         │    0.37535327672958374    │
-└───────────────────────────┴───────────────────────────┘
-
-┏━━━━━━━━━━━━━━━━━━━━━━━━━━━┳━━━━━━━━━━━━━━━━━━━━━━━━━━━┓
-┃        Test metric        ┃       DataLoader 0        ┃
-┡━━━━━━━━━━━━━━━━━━━━━━━━━━━╇━━━━━━━━━━━━━━━━━━━━━━━━━━━┩
-│         test_acc          │    0.8784000277519226     │
-│         test_loss         │    0.3540230393409729     │
+│         test_acc          │    0.8108000159263611     │
+│          test_f1          │    0.8108000159263611     │
+│         test_loss         │    0.5502325892448425     │
 └───────────────────────────┴───────────────────────────┘
 """
