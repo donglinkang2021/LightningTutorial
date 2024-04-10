@@ -1,4 +1,4 @@
-# TRANSFER LEARNING
+# CODE STRUCTURE
 
 Here we focus on the code structure of PyTorch Lightning.
 
